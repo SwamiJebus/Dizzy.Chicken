@@ -8,7 +8,7 @@
 //    Pin Mappings    //
 ////////////////////////
 
-gpio_num_t Pin_ESC0 = GPIO_NUM_0;
+const auto MOTOR01_PIN = GPIO_NUM_0;
 
 /////////////////////
 //    Variables    //
@@ -19,15 +19,17 @@ int InputY_Raw = 0;
 
 // Enum for health of outgoing packets.
 esp_now_send_status_t TransmitHealth;
+esp_err_t             RMTStatus;
 
 ///////////////////
 //    Defines    //
 ///////////////////
 
-int AnalogDeadband = 150;
+const int FAILSAFE_DRIVE_THROTTLE   = 999;
+const int AnalogDeadband            = 150;
 
-uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
-uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
+const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
+const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
 
 ////////////////////////
 //    Constructors    //
@@ -57,6 +59,18 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
 void BuildTelemetryPacket()
 {
   OutgoingPacket.Status = 1; // Situation normal, how are you?
+}
+
+void SendDriveESCThrottle(int rawAnalog)
+{
+  if (TransmitHealth == ESP_NOW_SEND_SUCCESS)
+  {
+    //esc.sendThrottleValue(abs(rawAnalog - 2047 ) > AnalogDeadband ? rawAnalog*0.488 : 999);
+  }
+  else
+  {
+    //esc.sendThrottleValue(FAILSAFE_DRIVE_THROTTLE);
+  }
 }
 
 ///////////////////
@@ -89,11 +103,12 @@ void setup() {
   }
 
   ////// Initialize ESCs //////
-
 }
 
 void loop() {
   BuildTelemetryPacket();
   esp_err_t result = esp_now_send(RemoteAddress, (uint8_t *) &OutgoingPacket, sizeof(OutgoingPacket)); 
+  //SendDriveESCThrottle(Motor01, InputX_Raw);
+  Serial.println(RMTStatus);
   delay(10);
 }
