@@ -3,14 +3,18 @@
 #include <esp_now.h>
 #include <math.h>
 #include <Servo.h>
+#include <AS5600.h>
 #include "rooster_protocol.h"
 
 ////////////////////////
 //    Pin Mappings    //
 ////////////////////////
 
-const int MOTOR01_PIN = D0;
-const int MOTOR02_PIN = D1;
+const int MOTOR01_PIN   = D0;
+const int MOTOR02_PIN   = D1;
+
+const int ENCODER_R_PIN  = D2;
+const int ENCODER_L_PIN  = D3;
 
 /////////////////////
 //    Variables    //
@@ -41,6 +45,7 @@ RoosterPacket       IncomingPacket;
 esp_now_peer_info_t PeerInfo;
 
 Servo ServoPWM = Servo();
+AS5600 Encoder_R = AS5600();   //  use default Wire
 
 /////////////////////
 //    Functions    //
@@ -53,19 +58,13 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
 
 void SendDriveThrottle(int analogInput, Servo servo, int pin)
 {
-  Serial.print("Motor ");
-  Serial.print(pin);
-  Serial.print(": ");
   if (abs(analogInput - 2048) > AnalogDeadband)
   {
     int input_pwm_scaled = map(analogInput, 0, 4095, 1000, 2000);
-    Serial.println(input_pwm_scaled);
     servo.writeMicroseconds(pin, input_pwm_scaled);
-    
   }
   else
   {
-    Serial.println("1500");
     servo.writeMicroseconds(pin, 1500);
   }
 }
@@ -94,7 +93,6 @@ void setup() {
   ////// Initialize ESP-NOW. //////
   if (esp_now_init() != ESP_OK) 
   {
-    Serial.println("Error initializing ESP-NOW");
     return;
   }
   esp_now_register_send_cb(OnDataSent);
@@ -108,16 +106,20 @@ void setup() {
   // Add peer
   if (esp_now_add_peer(&PeerInfo) != ESP_OK)
   {
-    Serial.println("Failed to add peer");
     return;
   }
+
+  // Initialize Encoders //
+  Wire.begin(); // Initialize I2C on default pins.
+  Encoder_R.begin();
+  //Encoder_R.setAddress(0x40);   //  Simply use better hardware in the AS5600L
+  Encoder_R.setDirection(AS5600_CLOCK_WISE);  //  default, just be explicit.
 }
 
 void loop() {
   BuildTelemetryPacket();
   esp_err_t result = esp_now_send(RemoteAddress, (uint8_t *) &OutgoingPacket, sizeof(OutgoingPacket)); 
 
-  // Go to failsafe if we lose connection
   if (TransmitHealth == 1)
   {
     SendDriveThrottle(InputX_Raw, ServoPWM, MOTOR01_PIN);
@@ -125,9 +127,14 @@ void loop() {
   }
   else
   {
-    Serial.println("No connection to TX!");
+    // Go to failsafe if we lose connection
     ServoPWM.writeMicroseconds(MOTOR01_PIN, FAILSAFE_DRIVE_THROTTLE);
     ServoPWM.writeMicroseconds(MOTOR02_PIN, FAILSAFE_DRIVE_THROTTLE);
   }
-  delay(10);
+
+  Serial.print(Encoder_R.readAngle());
+  Serial.print("\t");
+  Serial.println(Encoder_R.rawAngle());
+
+  delay(50);
 }
