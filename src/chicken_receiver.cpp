@@ -2,13 +2,15 @@
 #include <WiFi.h>
 #include <esp_now.h>
 #include <math.h>
+#include <Servo.h>
 #include "rooster_protocol.h"
 
 ////////////////////////
 //    Pin Mappings    //
 ////////////////////////
 
-const auto MOTOR01_PIN = GPIO_NUM_0;
+const int MOTOR01_PIN = D0;
+const int MOTOR02_PIN = D1;
 
 /////////////////////
 //    Variables    //
@@ -19,14 +21,13 @@ int InputY_Raw = 0;
 
 // Enum for health of outgoing packets.
 esp_now_send_status_t TransmitHealth;
-esp_err_t             RMTStatus;
 
 ///////////////////
 //    Defines    //
 ///////////////////
 
-const int FAILSAFE_DRIVE_THROTTLE   = 999;
-const int AnalogDeadband            = 150;
+const int FAILSAFE_DRIVE_THROTTLE   = 1500;
+const int AnalogDeadband            = 70;
 
 const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
 const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
@@ -39,6 +40,8 @@ RoosterPacket       OutgoingPacket;
 RoosterPacket       IncomingPacket;
 esp_now_peer_info_t PeerInfo;
 
+Servo ServoPWM = Servo();
+
 /////////////////////
 //    Functions    //
 /////////////////////
@@ -46,6 +49,25 @@ esp_now_peer_info_t PeerInfo;
 // Callback when data is sent.
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   TransmitHealth = status;
+}
+
+void SendDriveThrottle(int analogInput, Servo servo, int pin)
+{
+  Serial.print("Motor ");
+  Serial.print(pin);
+  Serial.print(": ");
+  if (abs(analogInput - 2048) > AnalogDeadband)
+  {
+    int input_pwm_scaled = map(analogInput, 0, 4095, 1000, 2000);
+    Serial.println(input_pwm_scaled);
+    servo.writeMicroseconds(pin, input_pwm_scaled);
+    
+  }
+  else
+  {
+    Serial.println("1500");
+    servo.writeMicroseconds(pin, 1500);
+  }
 }
 
 // Callback when data is received
@@ -59,18 +81,6 @@ void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
 void BuildTelemetryPacket()
 {
   OutgoingPacket.Status = 1; // Situation normal, how are you?
-}
-
-void SendDriveESCThrottle(int rawAnalog)
-{
-  if (TransmitHealth == ESP_NOW_SEND_SUCCESS)
-  {
-    //esc.sendThrottleValue(abs(rawAnalog - 2047 ) > AnalogDeadband ? rawAnalog*0.488 : 999);
-  }
-  else
-  {
-    //esc.sendThrottleValue(FAILSAFE_DRIVE_THROTTLE);
-  }
 }
 
 ///////////////////
@@ -101,14 +111,23 @@ void setup() {
     Serial.println("Failed to add peer");
     return;
   }
-
-  ////// Initialize ESCs //////
 }
 
 void loop() {
   BuildTelemetryPacket();
   esp_err_t result = esp_now_send(RemoteAddress, (uint8_t *) &OutgoingPacket, sizeof(OutgoingPacket)); 
-  //SendDriveESCThrottle(Motor01, InputX_Raw);
-  Serial.println(RMTStatus);
+
+  // Go to failsafe if we lose connection
+  if (TransmitHealth == 1)
+  {
+    SendDriveThrottle(InputX_Raw, ServoPWM, MOTOR01_PIN);
+    SendDriveThrottle(InputY_Raw, ServoPWM, MOTOR02_PIN);
+  }
+  else
+  {
+    Serial.println("No connection to TX!");
+    ServoPWM.writeMicroseconds(MOTOR01_PIN, FAILSAFE_DRIVE_THROTTLE);
+    ServoPWM.writeMicroseconds(MOTOR02_PIN, FAILSAFE_DRIVE_THROTTLE);
+  }
   delay(10);
 }
