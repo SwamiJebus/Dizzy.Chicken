@@ -4,24 +4,23 @@
 #include <math.h>
 #include <Servo.h>
 #include <AS5600.h>
+#include <tuple>
 #include "rooster_protocol.h"
 
 ////////////////////////
 //    Pin Mappings    //
 ////////////////////////
 
-const int MOTOR01_PIN   = D0;
-const int MOTOR02_PIN   = D1;
-
-const int ENCODER_R_PIN  = D2;
-const int ENCODER_L_PIN  = D3;
+const int MOTOR_LL_PIN   = D0;
+const int MOTOR_LU_PIN   = D1;
 
 /////////////////////
 //    Variables    //
 /////////////////////
 
-int InputX_Raw = 0; // Analog values range from 0-4095
-int InputY_Raw = 0;
+// Analog values range from 0-4095
+int Ch1_Raw = 0;
+int Ch2_Raw = 0;
 
 // Enum for health of outgoing packets.
 esp_now_send_status_t TransmitHealth;
@@ -36,6 +35,10 @@ const int AnalogDeadband            = 70;
 const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
 const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
 
+struct pivotCommand {
+  int PivotDirection, RollDirection, PivotScale;
+};
+
 ////////////////////////
 //    Constructors    //
 ////////////////////////
@@ -45,7 +48,7 @@ RoosterPacket       IncomingPacket;
 esp_now_peer_info_t PeerInfo;
 
 Servo ServoPWM = Servo();
-AS5600 Encoder_R = AS5600();   //  use default Wire
+AS5600 Encoder_L = AS5600();   //  use default Wire
 
 /////////////////////
 //    Functions    //
@@ -56,24 +59,54 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   TransmitHealth = status;
 }
 
-void SendDriveThrottle(int analogInput, Servo servo, int pin)
+pivotCommand CalculatePivot(int currentHeading, int targetheading)
 {
-  if (abs(analogInput - 2048) > AnalogDeadband)
+  pivotCommand command;
+
+  int delta = targetheading - currentHeading;
+  int pivotDirection = 1; // -1 = Counter-Clockwise, 1 = Clockwise
+  int rollDirection  = 1; // -1 = Reverse, 1 = Forward
+  delta = (delta + 2048) % 4095 - 2048;   // Normalize the angular difference (-180, 180). 
+
+  // Use delta as arbitrary scale for pivot speed.
+  command.PivotScale = delta;
+  // Determine pivot direction
+  command.PivotDirection = (delta > 0) ? -1: 1;
+  // Determine roll direction
+  command.RollDirection  = (abs(delta > 1024)) ? -1: 1;
+
+  return command;
+}
+
+void SendDriveThrottle()
+{
+  if (abs(Ch1_Raw - 2048) > AnalogDeadband || abs(Ch2_Raw - 2048) > AnalogDeadband)
   {
-    int input_pwm_scaled = map(analogInput, 0, 4095, 1000, 2000);
-    servo.writeMicroseconds(pin, input_pwm_scaled);
+    //float polarR = sqrt(pow(IncomingPacket.Ch1,2) + pow(IncomingPacket.Ch2,2));
+    float polarT = atan2(Ch1_Raw - 2048, -(Ch2_Raw - 2048));
+
+    int commandHeading = ((polarT + 3.14) / 6.28) * 4095; // Need to achieve this angle.
+    int currentHeading = Encoder_L.readAngle();                 // We are here.
+
+    pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
+
+    // int pwm_Scaled = map(pivot.PivotScale, 0, 1024, 0, 500)+1500;
+
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, pivot.PivotDirection*60 + 1500);
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, pivot.PivotDirection*60 + 1500);
   }
   else
   {
-    servo.writeMicroseconds(pin, 1500);
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, 1500);
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, 1500);
   }
 }
 
 // Callback when data is received
 void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
   memcpy(&IncomingPacket, incomingData, sizeof(IncomingPacket));
-  InputX_Raw = IncomingPacket.Ch1;
-  InputY_Raw = IncomingPacket.Ch2;
+  Ch1_Raw = IncomingPacket.Ch1;
+  Ch2_Raw = IncomingPacket.Ch2;
 }
 
 // Set device health variables.
@@ -111,9 +144,9 @@ void setup() {
 
   // Initialize Encoders //
   Wire.begin(); // Initialize I2C on default pins.
-  Encoder_R.begin();
-  //Encoder_R.setAddress(0x40);   //  Simply use better hardware in the AS5600L
-  Encoder_R.setDirection(AS5600_CLOCK_WISE);  //  default, just be explicit.
+  Encoder_L.begin();
+  //Encoder_L.setAddress(0x40);   //  Simply use better hardware in the AS5600L
+  Encoder_L.setDirection(AS5600_CLOCK_WISE);  //  default, just be explicit.
 }
 
 void loop() {
@@ -122,19 +155,14 @@ void loop() {
 
   if (TransmitHealth == 1)
   {
-    SendDriveThrottle(InputX_Raw, ServoPWM, MOTOR01_PIN);
-    SendDriveThrottle(InputY_Raw, ServoPWM, MOTOR02_PIN);
+    SendDriveThrottle();
   }
   else
   {
     // Go to failsafe if we lose connection
-    ServoPWM.writeMicroseconds(MOTOR01_PIN, FAILSAFE_DRIVE_THROTTLE);
-    ServoPWM.writeMicroseconds(MOTOR02_PIN, FAILSAFE_DRIVE_THROTTLE);
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, FAILSAFE_DRIVE_THROTTLE);
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, FAILSAFE_DRIVE_THROTTLE);
   }
-
-  Serial.print(Encoder_R.readAngle());
-  Serial.print("\t");
-  Serial.println(Encoder_R.rawAngle());
 
   delay(50);
 }
