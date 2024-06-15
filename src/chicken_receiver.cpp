@@ -63,15 +63,14 @@ pivotCommand CalculatePivot(int currentHeading, int targetheading)
 {
   pivotCommand command;
 
-  int delta = targetheading - currentHeading;
   int pivotDirection = 1; // -1 = Counter-Clockwise, 1 = Clockwise
   int rollDirection  = 1; // -1 = Reverse, 1 = Forward
-  delta = (delta + 2048) % 4095 - 2048;   // Normalize the angular difference (-180, 180). 
+  int delta = (targetheading - currentHeading + 1024) % 2048 - 1024;   // Normalize the angular difference (-180, 180). 
 
   // Use delta as arbitrary scale for pivot speed.
   command.PivotScale = delta;
   // Determine pivot direction
-  command.PivotDirection = (delta > 0) ? -1: 1;
+  command.PivotDirection = (delta < 0) ? -1: 1;
   // Determine roll direction
   command.RollDirection  = (abs(delta > 1024)) ? -1: 1;
 
@@ -85,15 +84,26 @@ void SendDriveThrottle()
     //float polarR = sqrt(pow(IncomingPacket.Ch1,2) + pow(IncomingPacket.Ch2,2));
     float polarT = atan2(Ch1_Raw - 2048, -(Ch2_Raw - 2048));
 
-    int commandHeading = ((polarT + 3.14) / 6.28) * 4095; // Need to achieve this angle.
+    float commandHeading = ((polarT + 3.14) / 6.28) * 4095 ; // Need to achieve this angle.
     int currentHeading = Encoder_L.readAngle();                 // We are here.
 
     pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
 
-    // int pwm_Scaled = map(pivot.PivotScale, 0, 1024, 0, 500)+1500;
+    Serial.print("(");
+    Serial.print(currentHeading);
+    Serial.print(",");
+    Serial.print(commandHeading);
+    Serial.print(")");
 
-    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, pivot.PivotDirection*60 + 1500);
-    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, pivot.PivotDirection*60 + 1500);
+
+    Serial.print("(");
+    Serial.print(pivot.PivotScale);
+    Serial.print(",");
+    Serial.print(pivot.PivotDirection);
+    Serial.println(")");
+
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, pivot.PivotDirection*70 + 1500);
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, pivot.PivotDirection*70 + 1500);
   }
   else
   {
