@@ -59,20 +59,18 @@ void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   TransmitHealth = status;
 }
 
-pivotCommand CalculatePivot(int currentHeading, int targetheading)
+pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 {
   pivotCommand command;
 
-  int pivotDirection = 1; // -1 = Counter-Clockwise, 1 = Clockwise
-  int rollDirection  = 1; // -1 = Reverse, 1 = Forward
-  int delta = (targetheading - currentHeading + 1024) % 2048 - 1024;   // Normalize the angular difference (-180, 180). 
+  int delta = (((targetHeading - currentHeading + 1024 % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
 
+  // Determine pivot direction
+  command.PivotDirection = delta < 0 ? -1: 1;
+    // Determine roll direction
+  command.RollDirection  = (abs(delta > 1024)) ? -1: 1;
   // Use delta as arbitrary scale for pivot speed.
   command.PivotScale = delta;
-  // Determine pivot direction
-  command.PivotDirection = (delta < 0) ? -1: 1;
-  // Determine roll direction
-  command.RollDirection  = (abs(delta > 1024)) ? -1: 1;
 
   return command;
 }
@@ -84,7 +82,7 @@ void SendDriveThrottle()
     //float polarR = sqrt(pow(IncomingPacket.Ch1,2) + pow(IncomingPacket.Ch2,2));
     float polarT = atan2(Ch1_Raw - 2048, -(Ch2_Raw - 2048));
 
-    float commandHeading = ((polarT + 3.14) / 6.28) * 4095 ; // Need to achieve this angle.
+    int commandHeading = (int)(((polarT + 3.14) / 6.28) * 4095) ; // Need to achieve this angle.
     int currentHeading = Encoder_L.readAngle();                 // We are here.
 
     pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
