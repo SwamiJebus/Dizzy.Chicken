@@ -31,6 +31,7 @@ esp_now_send_status_t TransmitHealth;
 
 const int FAILSAFE_DRIVE_THROTTLE   = 1500;
 const int AnalogDeadband            = 70;
+const int PWMMidThrottle            = 1500;
 
 const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
 const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
@@ -65,10 +66,10 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 
   int delta = ((((targetHeading - currentHeading + 1024) % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
 
-  // Determine pivot direction
+  Serial.println(delta);
+
   command.PivotDirection = delta < 0 ? -1: 1;
-  // Determine roll direction
-  command.RollDirection  = (abs(delta > 1024)) ? -1: 1;
+  command.RollDirection  = abs(targetHeading - currentHeading) % 2048 < 1024 ? -1 : 1; //TODO Fix this
   // Use delta as arbitrary scale for pivot speed.
   command.PivotScale = abs(delta);
 
@@ -77,24 +78,38 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 
 void SendDriveThrottle()
 {
-  if (abs(Ch1_Raw - 2048) > AnalogDeadband || abs(Ch2_Raw - 2048) > AnalogDeadband)
-  {
-    //float polarR = sqrt(pow(IncomingPacket.Ch1,2) + pow(IncomingPacket.Ch2,2));
-    float polarT = atan2(Ch1_Raw - 2048, -(Ch2_Raw - 2048));
+  int CartesianCh1 = Ch1_Raw - 2048;
+  int CartesianCh2 = Ch2_Raw - 2048;
 
-    int commandHeading = (int)(((polarT + 3.14) / 6.28) * 4095) ; // Need to achieve this angle.
-    int currentHeading = abs(Encoder_L.readAngle());                 // We are here.
+  if (abs(CartesianCh1) > AnalogDeadband || abs(CartesianCh2) > AnalogDeadband)
+  {
+    float polarR = sqrt(pow(CartesianCh1,2) + pow(CartesianCh2,2));
+    float polarT = atan2(CartesianCh1, -CartesianCh2);
+
+    int commandHeading = (int)(((polarT + 3.14) / 6.28) * 4095);
+    int currentHeading = abs(Encoder_L.readAngle());
+
+    int pivotSpeed  = 0;
+    int rollSpeed   = 0;
 
     pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
-    int pivotSpeed = (map(pivot.PivotScale, 0, 1024, 50, 300))*pivot.PivotDirection + 1500;
 
-    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, pivotSpeed);
-    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, pivotSpeed);
+    if (abs(commandHeading-currentHeading) > 35)
+    {
+      pivotSpeed = (map(pivot.PivotScale, 0, 1024, 35, 350))*pivot.PivotDirection;
+    }
+    if (polarR > 120)
+    {
+      rollSpeed = map(polarR, 120, 1000, 35, 499);
+    }
+
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, PWMMidThrottle+pivotSpeed+(rollSpeed*pivot.RollDirection));
   }
   else
   {
-    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, 1500);
-    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, 1500);
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle);
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, PWMMidThrottle);
   }
 }
 
