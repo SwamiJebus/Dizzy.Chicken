@@ -37,7 +37,7 @@ const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Mayb
 const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
 
 struct pivotCommand {
-  int PivotDirection, RollDirection, PivotScale;
+  int PivotDirection, RollDirection, AngleDelta;
 };
 
 ////////////////////////
@@ -69,9 +69,9 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
   Serial.println(delta);
 
   command.PivotDirection = delta < 0 ? -1: 1;
-  command.RollDirection  = abs(targetHeading - currentHeading) % 2048 < 1024 ? -1 : 1; //TODO Fix this
+  command.RollDirection  = 1; // TODO Fix this
   // Use delta as arbitrary scale for pivot speed.
-  command.PivotScale = abs(delta);
+  command.AngleDelta = abs(delta);
 
   return command;
 }
@@ -94,13 +94,13 @@ void SendDriveThrottle()
 
     pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
 
-    if (abs(commandHeading-currentHeading) > 35)
+    if (pivot.AngleDelta > 30)
     {
-      pivotSpeed = (map(pivot.PivotScale, 0, 1024, 35, 350))*pivot.PivotDirection;
+      pivotSpeed = (map(pivot.AngleDelta, 0, 1024, 30, 250))*pivot.PivotDirection;
     }
-    if (polarR > 120)
+    if (pivot.AngleDelta < 100)
     {
-      rollSpeed = map(polarR, 120, 1000, 35, 499);
+      rollSpeed = 0; // map(polarR, 120, 1000, 35, 499);
     }
 
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
