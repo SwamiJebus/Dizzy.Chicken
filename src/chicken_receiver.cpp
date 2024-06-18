@@ -66,8 +66,6 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 
   int delta = ((((targetHeading - currentHeading + 1024) % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
 
-  Serial.println(delta);
-
   command.PivotDirection = delta < 0 ? -1: 1;
   command.RollDirection  = 1; // TODO Fix this
   // Use delta as arbitrary scale for pivot speed.
@@ -98,9 +96,9 @@ void SendDriveThrottle()
     {
       pivotSpeed = (map(pivot.AngleDelta, 0, 1024, 30, 250))*pivot.PivotDirection;
     }
-    if (pivot.AngleDelta < 100)
+    if (pivot.AngleDelta < 512)
     {
-      rollSpeed = 0; // map(polarR, 120, 1000, 35, 499);
+      rollSpeed = map(polarR, 120, 1800, 30, 499);
     }
 
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
@@ -175,5 +173,5 @@ void loop() {
     ServoPWM.writeMicroseconds(MOTOR_LU_PIN, FAILSAFE_DRIVE_THROTTLE);
   }
 
-  delay(50);
+  delay(25);
 }
