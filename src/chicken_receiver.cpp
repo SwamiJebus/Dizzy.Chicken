@@ -11,8 +11,9 @@
 //    Pin Mappings    //
 ////////////////////////
 
-const int MOTOR_LL_PIN   = D0;
-const int MOTOR_LU_PIN   = D1;
+const int MOTOR_LL_PIN      = D0;
+const int MOTOR_LU_PIN      = D1;
+const int ENCODER_L_DIR_PIN = D10;
 
 /////////////////////
 //    Variables    //
@@ -66,7 +67,7 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 
   int delta = ((((targetHeading - currentHeading + 1024) % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
 
-  command.PivotDirection = delta < 0 ? -1: 1;
+  command.PivotDirection = delta > 0 ? -1: 1;
   command.RollDirection  = 1; // TODO Fix this
   // Use delta as arbitrary scale for pivot speed.
   command.AngleDelta = abs(delta);
@@ -94,11 +95,11 @@ void SendDriveThrottle()
 
     if (pivot.AngleDelta > 30)
     {
-      pivotSpeed = (map(pivot.AngleDelta, 0, 1024, 30, 250))*pivot.PivotDirection;
+      pivotSpeed = (map(pivot.AngleDelta, 0, 1024, 15, 250))*pivot.PivotDirection;
     }
     if (pivot.AngleDelta < 512)
     {
-      rollSpeed = map(polarR, 120, 1800, 30, 499);
+      rollSpeed = 0; //map(polarR, 120, 1800, 30, 499);
     }
 
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
@@ -153,9 +154,9 @@ void setup() {
 
   // Initialize Encoders //
   Wire.begin(); // Initialize I2C on default pins.
-  Encoder_L.begin();
+  Encoder_L.begin(ENCODER_L_DIR_PIN);
   //Encoder_L.setAddress(0x40);   //  Simply use better hardware in the AS5600L
-  Encoder_L.setDirection(AS5600_CLOCK_WISE);  //  default, just be explicit.
+  Encoder_L.setDirection(AS5600_COUNTERCLOCK_WISE);  //  default, just be explicit.
 }
 
 void loop() {
