@@ -37,7 +37,8 @@ const int PWMMidThrottle            = 1500;
 const uint8_t SelfAddress[] = {0xA0, 0x76, 0x4E, 0x40, 0x2E, 0x14}; // TODO Maybe don't hardcode this
 const uint8_t RemoteAddress[] = {0x34, 0x85, 0x18, 0x03, 0x9b, 0x84}; // TODO Maybe don't hardcode this
 
-struct pivotCommand {
+struct pivotCommand 
+{
   int PivotDirection, RollDirection, AngleDelta;
 };
 
@@ -56,8 +57,14 @@ AS5600 Encoder_L = AS5600();   //  use default Wire
 //    Functions    //
 /////////////////////
 
+float EaseInSine(float x)
+{
+  return 450 * (-cos(x/325.949)/2 + 0.5); // Max pivot speed = 500 us
+}
+
 // Callback when data is sent.
-void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) 
+{
   TransmitHealth = status;
 }
 
@@ -69,7 +76,6 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 
   command.PivotDirection = delta > 0 ? -1: 1;
   command.RollDirection  = 1; // TODO Fix this
-  // Use delta as arbitrary scale for pivot speed.
   command.AngleDelta = abs(delta);
 
   return command;
@@ -93,10 +99,8 @@ void SendDriveThrottle()
 
     pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
 
-    if (pivot.AngleDelta > 30)
-    {
-      pivotSpeed = (map(pivot.AngleDelta, 0, 1024, 15, 250))*pivot.PivotDirection;
-    }
+    pivotSpeed = EaseInSine(pivot.AngleDelta)*pivot.PivotDirection;
+
     if (pivot.AngleDelta < 512)
     {
       rollSpeed = 0; //map(polarR, 120, 1800, 30, 499);
@@ -113,7 +117,8 @@ void SendDriveThrottle()
 }
 
 // Callback when data is received
-void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+void OnDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) 
+{
   memcpy(&IncomingPacket, incomingData, sizeof(IncomingPacket));
   Ch1_Raw = IncomingPacket.Ch1;
   Ch2_Raw = IncomingPacket.Ch2;
@@ -129,7 +134,8 @@ void BuildTelemetryPacket()
 //    SETUP      //
 ///////////////////
 
-void setup() {
+void setup() 
+{
   Serial.begin(115200);
   WiFi.mode(WIFI_MODE_STA);
 
@@ -159,7 +165,8 @@ void setup() {
   Encoder_L.setDirection(AS5600_COUNTERCLOCK_WISE);  //  default, just be explicit.
 }
 
-void loop() {
+void loop() 
+{
   BuildTelemetryPacket();
   esp_err_t result = esp_now_send(RemoteAddress, (uint8_t *) &OutgoingPacket, sizeof(OutgoingPacket)); 
 
