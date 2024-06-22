@@ -23,6 +23,8 @@ const int ENCODER_L_DIR_PIN = D10;
 int Ch1_Raw = 0;
 int Ch2_Raw = 0;
 
+int cmdTime;
+
 // Enum for health of outgoing packets.
 esp_now_send_status_t TransmitHealth;
 
@@ -179,7 +181,6 @@ void loop()
     // Go to failsafe if we lose connection
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, FAILSAFE_DRIVE_THROTTLE);
     ServoPWM.writeMicroseconds(MOTOR_LU_PIN, FAILSAFE_DRIVE_THROTTLE);
+    delay(25);
   }
-
-  delay(25);
 }
