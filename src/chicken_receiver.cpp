@@ -64,6 +64,17 @@ float EaseInSine(float x)
   return 450 * (-cos(x/325.949)/2 + 0.5); // Max pivot speed = 500 us
 }
 
+int CalculatePivotDelta(int currentHeading, int targetHeading)
+{
+  return ((((targetHeading - currentHeading + 1024) % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
+}
+
+int CalculateRollDelta(int currentHeading, int targetHeading)
+{
+  int rawDiff = ((targetHeading - currentHeading + 2048) % 4095) - 2048;
+  return abs(rawDiff < -2048 ? rawDiff + 4095 : rawDiff);
+}
+
 // Callback when data is sent.
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) 
 {
@@ -74,12 +85,13 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
 {
   pivotCommand command;
 
-  int delta = ((((targetHeading - currentHeading + 1024) % 2048) + 2048) % 2048) - 1024; // Trust me, bro.
+  int pivotDelta  = CalculatePivotDelta(currentHeading, targetHeading);
+  int rollDelta   = CalculateRollDelta(currentHeading, targetHeading);
 
-  command.PivotDirection = delta > 0 ? -1: 1;
-  command.RollDirection  = 1; // TODO Fix this
-  command.AngleDelta = abs(delta);
-
+  command.PivotDirection = pivotDelta > 0 ? -1: 1;
+  command.RollDirection  = rollDelta > 1024 ? -1 : 1; // TODO Fix this
+  command.AngleDelta = abs(pivotDelta);
+  Serial.println(rollDelta);
   return command;
 }
 
@@ -103,9 +115,9 @@ void SendDriveThrottle()
 
     pivotSpeed = EaseInSine(pivot.AngleDelta)*pivot.PivotDirection;
 
-    if (pivot.AngleDelta < 512)
+    if (pivot.AngleDelta < 256)
     {
-      rollSpeed = 0; //map(polarR, 120, 1800, 30, 499);
+      rollSpeed = map(polarR, 120, 1800, 30, 500);
     }
 
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
