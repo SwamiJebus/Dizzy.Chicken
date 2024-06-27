@@ -13,7 +13,9 @@
 
 const int MOTOR_LL_PIN      = D0;
 const int MOTOR_LU_PIN      = D1;
-const int ENCODER_L_DIR_PIN = D10;
+const int MOTOR_RL_PIN      = D2;
+const int MOTOR_RU_PIN      = D3;
+const int ENCODER_DIR_PIN   = D10;
 
 /////////////////////
 //    Variables    //
@@ -31,6 +33,8 @@ esp_now_send_status_t TransmitHealth;
 ///////////////////
 //    Defines    //
 ///////////////////
+
+#define MultiplexerAddress 0x70
 
 const int FAILSAFE_DRIVE_THROTTLE   = 1500;
 const int AnalogDeadband            = 70;
@@ -54,6 +58,7 @@ esp_now_peer_info_t PeerInfo;
 
 Servo ServoPWM = Servo();
 AS5600 Encoder_L = AS5600();   //  use default Wire
+AS5600 Encoder_R = AS5600();
 
 /////////////////////
 //    Functions    //
@@ -89,7 +94,7 @@ pivotCommand CalculatePivot(int currentHeading, int targetHeading)
   int rollDelta   = CalculateRollDelta(currentHeading, targetHeading);
 
   command.PivotDirection = pivotDelta > 0 ? -1: 1;
-  command.RollDirection  = rollDelta > 1024 ? -1 : 1; // TODO Fix this
+  command.RollDirection  = rollDelta < 1024 ? -1 : 1;
   command.AngleDelta = abs(pivotDelta);
   Serial.println(rollDelta);
   return command;
@@ -102,31 +107,44 @@ void SendDriveThrottle()
 
   if (abs(CartesianCh1) > AnalogDeadband || abs(CartesianCh2) > AnalogDeadband)
   {
-    float polarR = sqrt(pow(CartesianCh1,2) + pow(CartesianCh2,2));
-    float polarT = atan2(CartesianCh1, -CartesianCh2);
+    float cmdPolarRadius = sqrt(pow(CartesianCh1,2) + pow(CartesianCh2,2));
+    float cmdPolarTheta = atan2(CartesianCh1, -CartesianCh2);
 
-    int commandHeading = (int)(((polarT + 3.14) / 6.28) * 4095);
-    int currentHeading = abs(Encoder_L.readAngle());
+    int commandHeading = (int)(((cmdPolarTheta + 3.14) / 6.28) * 4095);
+    int currentHeadingL = abs(Encoder_L.readAngle());
+    int currentHeadingR = abs(Encoder_R.readAngle());
 
-    int pivotSpeed  = 0;
-    int rollSpeed   = 0;
+    int pivotSpeedL  = 0;
+    int pivotSpeedR  = 0;
+    int rollSpeedL   = 0;
+    int rollSpeedR   = 0;
 
-    pivotCommand pivot = CalculatePivot(currentHeading, commandHeading);
+    pivotCommand pivotL = CalculatePivot(currentHeadingL, commandHeading);
+    pivotCommand pivotR = CalculatePivot(currentHeadingR, commandHeading);
 
-    pivotSpeed = EaseInSine(pivot.AngleDelta)*pivot.PivotDirection;
+    pivotSpeedL = EaseInSine(pivotL.AngleDelta)*pivotL.PivotDirection;
+    pivotSpeedR = EaseInSine(pivotR.AngleDelta)*pivotR.PivotDirection;
 
-    if (pivot.AngleDelta < 256)
+    if (pivotL.AngleDelta < 256)
     {
-      rollSpeed = map(polarR, 120, 1800, 30, 500);
+      rollSpeedL = map(cmdPolarRadius, 120, 1800, 30, 500);
+    }
+    if (pivotR.AngleDelta < 256)
+    {
+      rollSpeedR = map(cmdPolarRadius, 120, 1800, 30, 500);
     }
 
-    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeed-(rollSpeed*pivot.RollDirection));
-    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, PWMMidThrottle+pivotSpeed+(rollSpeed*pivot.RollDirection));
+    ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle+pivotSpeedL-(rollSpeedL*pivotL.RollDirection));
+    ServoPWM.writeMicroseconds(MOTOR_LU_PIN, PWMMidThrottle+pivotSpeedL+(rollSpeedL*pivotL.RollDirection));
+    ServoPWM.writeMicroseconds(MOTOR_RL_PIN, PWMMidThrottle+pivotSpeedL-(rollSpeedL*pivotL.RollDirection));
+    ServoPWM.writeMicroseconds(MOTOR_RU_PIN, PWMMidThrottle+pivotSpeedL+(rollSpeedL*pivotL.RollDirection));
   }
   else
   {
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, PWMMidThrottle);
     ServoPWM.writeMicroseconds(MOTOR_LU_PIN, PWMMidThrottle);
+    ServoPWM.writeMicroseconds(MOTOR_RL_PIN, PWMMidThrottle);
+    ServoPWM.writeMicroseconds(MOTOR_RU_PIN, PWMMidThrottle);
   }
 }
 
@@ -174,9 +192,11 @@ void setup()
 
   // Initialize Encoders //
   Wire.begin(); // Initialize I2C on default pins.
-  Encoder_L.begin(ENCODER_L_DIR_PIN);
+  Encoder_L.begin(ENCODER_DIR_PIN);
+  Encoder_R.begin(ENCODER_DIR_PIN);
   //Encoder_L.setAddress(0x40);   //  Simply use better hardware in the AS5600L
   Encoder_L.setDirection(AS5600_COUNTERCLOCK_WISE);  //  default, just be explicit.
+  Encoder_R.setDirection(AS5600_COUNTERCLOCK_WISE);  //  default, just be explicit.
 }
 
 void loop() 
@@ -193,6 +213,8 @@ void loop()
     // Go to failsafe if we lose connection
     ServoPWM.writeMicroseconds(MOTOR_LL_PIN, FAILSAFE_DRIVE_THROTTLE);
     ServoPWM.writeMicroseconds(MOTOR_LU_PIN, FAILSAFE_DRIVE_THROTTLE);
+    ServoPWM.writeMicroseconds(MOTOR_RL_PIN, FAILSAFE_DRIVE_THROTTLE);
+    ServoPWM.writeMicroseconds(MOTOR_RU_PIN, FAILSAFE_DRIVE_THROTTLE);
     delay(25);
   }
 }
